@@ -245,7 +245,7 @@ final class ColumnFamilyRecordWriter extends RecordWriter<ByteBuffer,List<org.ap
 
     private Clock avroToThrift(org.apache.cassandra.avro.Clock aclo)
     {
-        return new Clock(aclo.timestamp);
+        return new Clock().setTimestamp(aclo.timestamp);
     }
 
     /**

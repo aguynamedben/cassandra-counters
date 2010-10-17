@@ -45,7 +45,7 @@ public class StreamIn
     /**
      * Request ranges to be transferred from source to local node
      */
-    public static void requestRanges(InetAddress source, String tableName, Collection<Range> ranges)
+    public static void requestRanges(InetAddress source, String tableName, Collection<Range> ranges, OperationType type)
     {
         assert ranges.size() > 0;
 
@@ -53,7 +53,7 @@ public class StreamIn
             logger.debug("Requesting from {} ranges {}", source, StringUtils.join(ranges, ", "));
         StreamContext context = new StreamContext(source);
         StreamInManager.get(context);
-        Message message = new StreamRequestMessage(FBUtilities.getLocalAddress(), ranges, tableName, context.sessionId).makeMessage();
+        Message message = new StreamRequestMessage(FBUtilities.getLocalAddress(), ranges, tableName, context.sessionId, type).makeMessage();
         MessagingService.instance.sendOneWay(message, source);
     }
 

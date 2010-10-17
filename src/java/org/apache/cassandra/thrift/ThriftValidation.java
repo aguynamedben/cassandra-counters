@@ -21,6 +21,17 @@ package org.apache.cassandra.thrift;
  */
 
 import java.util.Arrays;
+import org.apache.commons.lang.ArrayUtils;
+
+import org.apache.cassandra.db.IncrementCounterClock;
+import org.apache.cassandra.db.KeyspaceNotDefinedException;
+import org.apache.cassandra.db.ColumnFamily;
+import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.db.ColumnFamilyType;
+import org.apache.cassandra.db.IClock;
+import org.apache.cassandra.db.TimestampClock;
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.MarshalException;
 import java.util.Comparator;
 import java.util.Set;
 
@@ -212,7 +223,8 @@ public class ThriftValidation
         if (cosc.column != null)
         {
             validateTtl(cosc.column);
-            validateClock(cosc.column.clock);
+            IClock clock = validateClock(keyspace, cfName, cosc.column.clock);
+            validateValueByClock(cosc.column.value, clock);
             ThriftValidation.validateColumnPath(keyspace, new ColumnPath(cfName).setSuper_column(null).setColumn(cosc.column.name));
         }
 
@@ -221,7 +233,8 @@ public class ThriftValidation
             for (Column c : cosc.super_column.columns)
             {
                 validateTtl(c);
-                validateClock(c.clock);
+                IClock clock = validateClock(keyspace, cfName, c.clock);
+                validateValueByClock(c.value, clock);
                 ThriftValidation.validateColumnPath(keyspace, new ColumnPath(cfName).setSuper_column(cosc.super_column.name).setColumn(c.name));
             }
         }
@@ -240,15 +253,63 @@ public class ThriftValidation
         assert column.isSetTtl() || column.ttl == 0;
     }
 
-    public static IClock validateClock(Clock clock) throws InvalidRequestException
+    /**
+     * Fetch the clock type for the provided column family and check that we have all the 
+     * information required to instantiate.
+     */
+    public static IClock validateClock(String keyspace, String cfName, Clock clock) throws InvalidRequestException
     {
-        if (clock.isSetTimestamp())
+        ClockType clockType = DatabaseDescriptor.getClockType(keyspace, cfName);
+        if (clockType == null)
+            throw new InvalidRequestException("No clock found for " + keyspace + " " + cfName);
+        
+        switch (clockType)
         {
+        case Timestamp:
+            if (!clock.isSetTimestamp())
+            {
+                throw new InvalidRequestException("No timestamp set, despite timestamp clock being used: " + keyspace + " " + cfName);
+            }
             return new TimestampClock(clock.getTimestamp());
+        case IncrementCounter:
+            return new IncrementCounterClock();
+        default:
+            throw new InvalidRequestException("Invalid clock type for " + keyspace + " " + cfName);
         }
-        throw new InvalidRequestException("Clock must have one a timestamp");
     }
 
+    /**
+     * Check that the value is valid for the clock specified.
+     * For example the increment counter cannot accept negative values.
+     * @param value Value to validate.
+     * @param cassandraClock Clock to check by.
+     * @throws InvalidRequestException If the value is invalid this exception is thrown.
+     */
+    public static void validateValueByClock(byte[] value, IClock cassandraClock) throws InvalidRequestException
+    {
+        switch (cassandraClock.type())
+        {
+            case IncrementCounter:
+                try
+                {
+                    long delta = FBUtilities.byteArrayToLong(value);
+                    if (delta < 0)
+                    {
+                        throw new InvalidRequestException("Value must be positive when using an increment counter");
+                    }
+                }
+                catch (IllegalArgumentException e)
+                {
+                    throw new InvalidRequestException("Value is not a valid long delta: " + e.getMessage());
+                }
+                break;
+            case Timestamp:
+            default:
+                return; //nothing to check
+        }
+        
+    }
+    
     public static void validateMutation(String keyspace, String cfName, Mutation mut)
             throws InvalidRequestException
     {

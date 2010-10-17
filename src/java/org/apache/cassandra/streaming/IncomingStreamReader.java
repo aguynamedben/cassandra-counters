@@ -106,7 +106,7 @@ public class IncomingStreamReader
             handleFileStatus(FileStatus.Action.DELETE);
         else
         {
-            FileStatusHandler.addSSTable(pendingFile);
+            FileStatusHandler.addSSTable(pendingFile, context);
             StreamInManager.get(context).finishAndRequestNext(lastFile);
         }
     }

@@ -62,7 +62,7 @@ public class StreamOut
     /**
      * Split out files for all tables on disk locally for each range and then stream them to the target endpoint.
     */
-    public static void transferRanges(InetAddress target, String tableName, Collection<Range> ranges, Runnable callback)
+    public static void transferRanges(InetAddress target, String tableName, Collection<Range> ranges, Runnable callback, OperationType type)
     {
         assert ranges.size() > 0;
         
@@ -76,7 +76,7 @@ public class StreamOut
         {
             Table table = flushSSTable(tableName);
             // send the matching portion of every sstable in the keyspace
-            transferSSTables(context, tableName, table.getAllSSTables(), ranges);
+            transferSSTables(context, tableName, table.getAllSSTables(), ranges, type);
         }
         catch (IOException e)
         {
@@ -120,7 +120,7 @@ public class StreamOut
     /**
      * Split out files for all tables on disk locally for each range and then stream them to the target endpoint.
     */
-    public static void transferRangesForRequest(StreamContext context, String tableName, Collection<Range> ranges, Runnable callback)
+    public static void transferRangesForRequest(StreamContext context, String tableName, Collection<Range> ranges, Runnable callback, OperationType type)
     {
         assert ranges.size() > 0;
 
@@ -130,7 +130,7 @@ public class StreamOut
         {
             Table table = flushSSTable(tableName);
             // send the matching portion of every sstable in the keyspace
-            transferSSTablesForRequest(context, tableName, table.getAllSSTables(), ranges);
+            transferSSTablesForRequest(context, tableName, table.getAllSSTables(), ranges, type);
         }
         catch (IOException e)
         {
@@ -144,9 +144,9 @@ public class StreamOut
     /**
      * Transfers matching portions of a group of sstables from a single table to the target endpoint.
      */
-    public static void transferSSTables(StreamContext context, String table, Collection<SSTableReader> sstables, Collection<Range> ranges) throws IOException
+    public static void transferSSTables(StreamContext context, String table, Collection<SSTableReader> sstables, Collection<Range> ranges, OperationType type) throws IOException
     {
-        List<PendingFile> pending = createPendingFiles(sstables, ranges);
+        List<PendingFile> pending = createPendingFiles(sstables, ranges, type);
 
         if (pending.size() > 0)
         {
@@ -166,9 +166,9 @@ public class StreamOut
      * Transfers the first file for matching portions of a group of sstables and appends a list of other files
      * to the header for the requesting destination to take control of the rest of the transfers
      */
-    private static void transferSSTablesForRequest(StreamContext context, String table, Collection<SSTableReader> sstables, Collection<Range> ranges) throws IOException
+    private static void transferSSTablesForRequest(StreamContext context, String table, Collection<SSTableReader> sstables, Collection<Range> ranges, OperationType type) throws IOException
     {
-        List<PendingFile> pending = createPendingFiles(sstables, ranges);
+        List<PendingFile> pending = createPendingFiles(sstables, ranges, type);
         if (pending.size() > 0)
         {
             StreamHeader header = new StreamHeader(context.sessionId, pending.get(0), pending, false);
@@ -191,7 +191,7 @@ public class StreamOut
     }
 
     // called prior to sending anything.
-    private static List<PendingFile> createPendingFiles(Collection<SSTableReader> sstables, Collection<Range> ranges)
+    private static List<PendingFile> createPendingFiles(Collection<SSTableReader> sstables, Collection<Range> ranges, OperationType type)
     {
         List<PendingFile> pending = new ArrayList<PendingFile>();
         for (SSTableReader sstable : sstables)
@@ -200,7 +200,7 @@ public class StreamOut
             List<Pair<Long,Long>> sections = sstable.getPositionsForRanges(ranges);
             if (sections.isEmpty())
                 continue;
-            pending.add(new PendingFile(desc, SSTable.COMPONENT_DATA, sections));
+            pending.add(new PendingFile(desc, SSTable.COMPONENT_DATA, sections, type));
         }
         logger.info("Stream context metadata {}, {} sstables.", pending, sstables.size());
         return pending;

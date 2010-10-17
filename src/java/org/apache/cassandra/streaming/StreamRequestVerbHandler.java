@@ -62,7 +62,7 @@ public class StreamRequestVerbHandler implements IVerbHandler
             else
             {
                 // range request.
-                StreamOut.transferRangesForRequest(new StreamContext(message.getFrom(), srm.sessionId), srm.table, srm.ranges, null);
+                StreamOut.transferRangesForRequest(new StreamContext(message.getFrom(), srm.sessionId), srm.table, srm.ranges, null, srm.type);
             }
         }
         catch (IOException ex)

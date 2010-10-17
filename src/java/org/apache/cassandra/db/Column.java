@@ -142,11 +142,7 @@ public class Column implements IColumn
 
     public IColumn diff(IColumn column)
     {
-        if (ClockRelationship.GREATER_THAN == column.clock().compare(clock))
-        {
-            return column;
-        }
-        return null;
+        return clock.diff(column, this);
     }
 
     public void updateDigest(MessageDigest digest)

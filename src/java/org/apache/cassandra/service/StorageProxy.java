@@ -53,6 +53,7 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.thrift.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.LatencyTracker;
+import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.WrappedRunnable;
 import org.apache.cassandra.db.filter.QueryFilter;
 
@@ -115,6 +116,9 @@ public class StorageProxy implements StorageProxyMBean
 
                 responseHandlers.add(responseHandler);
                 Message unhintedMessage = null;
+
+                updateDestinationByClock(consistency_level, rm, hintedEndpoints);
+                
                 for (Map.Entry<InetAddress, Collection<InetAddress>> entry : hintedEndpoints.asMap().entrySet())
                 {
                     InetAddress destination = entry.getKey();
@@ -123,6 +127,8 @@ public class StorageProxy implements StorageProxyMBean
                     if (targets.size() == 1 && targets.iterator().next().equals(destination))
                     {
                         // unhinted writes
+                        rm.updateClocks(destination);
+                        
                         if (destination.equals(FBUtilities.getLocalAddress()))
                         {
                             insertLocalMessage(rm, responseHandler);
@@ -176,6 +182,43 @@ public class StorageProxy implements StorageProxyMBean
             writeStats.addNano(System.nanoTime() - startTime);
         }
 
+    }
+
+    
+    
+    /**
+     * Update destination endpoints depending on the clock type.
+     */
+    private static void updateDestinationByClock(ConsistencyLevel consistency_level, RowMutation rm,
+            Multimap<InetAddress, InetAddress> destinationEndpoints)
+    {
+        ClockType clockType = rm.getColumnFamilies().iterator().next().getClockType();
+        if (clockType != ClockType.IncrementCounter)
+            return;
+        
+        assert ConsistencyLevel.ONE == consistency_level || ConsistencyLevel.ZERO == consistency_level: "Context-based CFs only support ConsistencyLevel.ONE or ZERO";
+        InetAddress randomDestination = pickRandomDestination(destinationEndpoints);
+        destinationEndpoints.clear();
+        destinationEndpoints.put(randomDestination, randomDestination);
+    }
+
+    /**
+     * @param endpoints potential destinations.
+     * @return one destination randomly chosen from the endpoints unless localhost is in the map, then that is returned.
+     */
+    private static InetAddress pickRandomDestination(Multimap<InetAddress, InetAddress> endpoints)
+    {
+        Set<InetAddress> destinationSet = endpoints.keySet();
+        
+        if (destinationSet.contains(FBUtilities.getLocalAddress()))
+        {
+            return FBUtilities.getLocalAddress();
+        }
+        else
+        {
+            InetAddress[] destinations = destinationSet.toArray(new InetAddress[0]);
+            return destinations[random.nextInt(destinations.length)];
+        }
     }
 
     private static void addHintHeader(Message message, InetAddress target)

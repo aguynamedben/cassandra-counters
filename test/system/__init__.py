@@ -153,6 +153,8 @@ class ThriftTester(BaseTester):
             Cassandra.CfDef('Keyspace1', 'Super2', column_type='Super', subcomparator_type='LongType'), 
             Cassandra.CfDef('Keyspace1', 'Super3', column_type='Super', subcomparator_type='LongType'), 
             Cassandra.CfDef('Keyspace1', 'Super4', column_type='Super', subcomparator_type='UTF8Type'),
+            Cassandra.CfDef('Keyspace1', 'IncrementCounter1', clock_type='IncrementCounter', reconciler='IncrementCounterReconciler'),
+            Cassandra.CfDef('Keyspace1', 'SuperIncrementCounter1', column_type='Super', clock_type='IncrementCounter', reconciler='IncrementCounterReconciler'),
             Cassandra.CfDef('Keyspace1', 'Indexed1', column_metadata=[Cassandra.ColumnDef('birthdate', 'LongType', Cassandra.IndexType.KEYS, 'birthdate')]),
         ])
 

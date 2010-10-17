@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
  import org.apache.cassandra.locator.AbstractReplicationStrategy;
  import org.apache.cassandra.net.*;
  import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.streaming.OperationType;
  import org.apache.cassandra.streaming.StreamIn;
  import org.apache.cassandra.utils.SimpleCondition;
  import org.apache.cassandra.utils.FBUtilities;
@@ -79,7 +80,7 @@ public class BootStrapper
                 StorageService.instance.addBootstrapSource(source, table);
                 if (logger.isDebugEnabled())
                     logger.debug("Requesting from " + source + " ranges " + StringUtils.join(entry.getValue(), ", "));
-                StreamIn.requestRanges(source, table, entry.getValue());
+                StreamIn.requestRanges(source, table, entry.getValue(), OperationType.BOOTSTRAP);
             }
         }
     }

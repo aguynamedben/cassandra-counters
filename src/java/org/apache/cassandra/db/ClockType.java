@@ -21,8 +21,13 @@ import org.apache.cassandra.io.ICompactSerializer2;
 
 public enum ClockType
 {
-    Timestamp;
+    Timestamp,
+    IncrementCounter;
 
+    /**
+     * @param name must match the name of one of the enum values.
+     * @return the clock type specified or null of not found.
+     */
     public final static ClockType create(String name)
     {
         assert name != null;
@@ -38,11 +43,27 @@ public enum ClockType
 
     public final IClock minClock()
     {
-        return TimestampClock.MIN_VALUE;
+        switch (this)
+        {
+        case Timestamp:
+            return TimestampClock.MIN_VALUE;
+        case IncrementCounter:
+            return IncrementCounterClock.MIN_VALUE;
+        default:
+            return null;
+        }
     }
 
     public final ICompactSerializer2<IClock> serializer()
     {
-        return TimestampClock.SERIALIZER;
+        switch (this)
+        {
+        case Timestamp:
+            return TimestampClock.SERIALIZER;
+        case IncrementCounter:
+            return IncrementCounterClock.SERIALIZER;
+        default:
+            return null;
+        }
     }
 }

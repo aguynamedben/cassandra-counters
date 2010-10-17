@@ -47,7 +47,6 @@ import org.apache.cassandra.db.migration.RenameKeyspace;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.clock.AbstractReconciler;
 import org.apache.cassandra.db.clock.TimestampReconciler;
 import org.apache.cassandra.db.filter.QueryPath;
@@ -367,8 +366,8 @@ public class CassandraServer implements Cassandra.Iface
         ThriftValidation.validateKey(key);
         ThriftValidation.validateColumnParent(clientState.getKeyspace(), column_parent);
         ThriftValidation.validateColumn(clientState.getKeyspace(), column_parent, column);
-        IClock cassandra_clock = ThriftValidation.validateClock(column.clock);
-
+        IClock cassandra_clock = ThriftValidation.validateClock(clientState.getKeyspace(), column_parent.getColumn_family(), column.clock);
+        
         RowMutation rm = new RowMutation(clientState.getKeyspace(), key);
         try
         {
@@ -411,6 +410,42 @@ public class CassandraServer implements Cassandra.Iface
         doInsert(consistency_level, rowMutations);
     }
 
+    public void increment(Map<byte[], Map<String, List<Mutation>>> mutation_map)
+            throws InvalidRequestException, UnavailableException, TimedOutException, TException
+    {
+        if (logger.isDebugEnabled())
+            logger.debug("increment");
+
+        clientState.hasKeyspaceAccess(Permission.WRITE_VALUE);
+        KSMetaData ksm = DatabaseDescriptor.getTableDefinition(clientState.getKeyspace());
+        
+        List<RowMutation> rowMutations = new ArrayList<RowMutation>();
+        for (Map.Entry<byte[], Map<String, List<Mutation>>> mutationEntry: mutation_map.entrySet())
+        {
+            byte[] key = mutationEntry.getKey();
+            ThriftValidation.validateKey(key);
+            
+            Map<String, List<Mutation>> columnFamilyToMutations = mutationEntry.getValue();
+            for (Map.Entry<String, List<Mutation>> columnFamilyMutations : columnFamilyToMutations.entrySet())
+            {
+                String cfName = columnFamilyMutations.getKey();
+                CFMetaData cf = ksm.cfMetaData().get(cfName);
+                if (cf == null || cf.clockType != ClockType.IncrementCounter) {
+                    throw new InvalidRequestException("Invalid column family, cannot increment: " + cfName);
+                }
+                
+                for (Mutation mutation : columnFamilyMutations.getValue())
+                {
+                    ThriftValidation.validateMutation(clientState.getKeyspace(), cfName, mutation);
+                }
+            }
+            rowMutations.add(RowMutation.getRowMutationFromMutations(clientState.getKeyspace(), key, columnFamilyToMutations));
+        }
+
+        // TODO fixed at consistency level one until CASSANDRA-1397
+        doInsert(ConsistencyLevel.ONE, rowMutations);
+    }
+    
     public void remove(byte[] key, ColumnPath column_path, Clock clock, ConsistencyLevel consistency_level)
     throws InvalidRequestException, UnavailableException, TimedOutException
     {
@@ -422,7 +457,7 @@ public class CassandraServer implements Cassandra.Iface
         ThriftValidation.validateKey(key);
         ThriftValidation.validateColumnPathOrParent(clientState.getKeyspace(), column_path);
 
-        IClock cassandra_clock = ThriftValidation.validateClock(clock);
+        IClock cassandra_clock = ThriftValidation.validateClock(clientState.getKeyspace(), column_path.getColumn_family(), clock);
 
         RowMutation rm = new RowMutation(clientState.getKeyspace(), key);
         rm.delete(new QueryPath(column_path), cassandra_clock);

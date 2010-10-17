@@ -22,6 +22,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
@@ -35,8 +37,10 @@ import org.apache.cassandra.net.Message;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.thrift.ColumnOrSuperColumn;
 import org.apache.cassandra.thrift.Deletion;
+import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.thrift.Mutation;
 import org.apache.cassandra.thrift.Clock;
+import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.config.CFMetaData;
@@ -253,13 +257,13 @@ public class RowMutation
                     assert cosc.super_column != null;
                     for (org.apache.cassandra.thrift.Column column : cosc.super_column.columns)
                     {
-                        rm.add(new QueryPath(cfName, cosc.super_column.name, column.name), column.value, unthriftifyClock(column.clock), column.ttl);
+                        rm.add(new QueryPath(cfName, cosc.super_column.name, column.name), column.value, unthriftifyClock(rm.getTable(), cfName, column.clock), column.ttl);
                     }
                 }
                 else
                 {
                     assert cosc.super_column == null;
-                    rm.add(new QueryPath(cfName, null, cosc.column.name), cosc.column.value, unthriftifyClock(cosc.column.clock), cosc.column.ttl);
+                    rm.add(new QueryPath(cfName, null, cosc.column.name), cosc.column.value, unthriftifyClock(rm.getTable(), cfName, cosc.column.clock), cosc.column.ttl);
                 }
             }
         }
@@ -305,36 +309,56 @@ public class RowMutation
         {
             for (org.apache.cassandra.thrift.Column column : cosc.super_column.columns)
             {
-                rm.add(new QueryPath(cfName, cosc.super_column.name, column.name), column.value, unthriftifyClock(column.clock), column.ttl);
+                rm.add(new QueryPath(cfName, cosc.super_column.name, column.name), column.value, unthriftifyClock(rm.getTable(), cfName, column.clock), column.ttl);
             }
         }
         else
         {
-            rm.add(new QueryPath(cfName, null, cosc.column.name), cosc.column.value, unthriftifyClock(cosc.column.clock), cosc.column.ttl);
+            rm.add(new QueryPath(cfName, null, cosc.column.name), cosc.column.value, unthriftifyClock(rm.getTable(), cfName, cosc.column.clock), cosc.column.ttl);
         }
     }
 
     private static void deleteColumnOrSuperColumnToRowMutation(RowMutation rm, String cfName, Deletion del)
     {
+        IClock clock = unthriftifyClock(rm.getTable(), cfName, del.clock);
         if (del.predicate != null && del.predicate.column_names != null)
         {
             for(byte[] c : del.predicate.column_names)
             {
                 if (del.super_column == null && DatabaseDescriptor.getColumnFamilyType(rm.table_, cfName) == ColumnFamilyType.Super)
-                    rm.delete(new QueryPath(cfName, c), unthriftifyClock(del.clock));
+                    rm.delete(new QueryPath(cfName, c), clock);
                 else
-                    rm.delete(new QueryPath(cfName, del.super_column, c), unthriftifyClock(del.clock));
+                    rm.delete(new QueryPath(cfName, del.super_column, c), clock);
             }
         }
         else
         {
-            rm.delete(new QueryPath(cfName, del.super_column), unthriftifyClock(del.clock));
+            rm.delete(new QueryPath(cfName, del.super_column), clock);
         }
     }
 
-    private static IClock unthriftifyClock(Clock clock)
+    private static IClock unthriftifyClock(String keyspace, String cfName, Clock clock)
     {
-        return new TimestampClock(clock.getTimestamp());
+        try
+        {
+            return ThriftValidation.validateClock(keyspace, cfName, clock);
+        }
+        catch (InvalidRequestException e)
+        {
+            return new TimestampClock(clock.getTimestamp()); //default
+        }
+    }
+
+    /**
+     * Update the context of all Columns in this RowMutation
+     */
+    public void updateClocks(InetAddress node)
+    {
+        for (Map.Entry<Integer, ColumnFamily> entry : modifications_.entrySet())
+        {
+            ColumnFamily cf = entry.getValue();
+            cf.getMarkedForDeleteAt().update(cf, node);
+        }
     }
 }
 

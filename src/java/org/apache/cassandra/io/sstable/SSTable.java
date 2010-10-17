@@ -57,6 +57,7 @@ public abstract class SSTable
     public static final String COMPONENT_STATS = Component.Type.STATS.repr;
 
     public static final String COMPONENT_COMPACTED = Component.Type.COMPACTED_MARKER.repr;
+    public static final String COMPONENT_STREAMED = Component.Type.STREAMED.repr;
 
     protected final Descriptor desc;
     protected final Set<Component> components;

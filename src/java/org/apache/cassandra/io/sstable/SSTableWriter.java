@@ -21,9 +21,7 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.*;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 
-import org.apache.commons.lang.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +33,7 @@ import org.apache.cassandra.io.AbstractCompactedRow;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.io.sstable.IRecoveryProcessor;
 import org.apache.cassandra.utils.BloomFilter;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.EstimatedHistogram;
@@ -193,7 +192,7 @@ public class SSTableWriter extends SSTable
     /**
      * @return An estimate of the number of keys contained in the given data file.
      */
-    private static long estimateRows(Descriptor desc, BufferedRandomAccessFile dfile) throws IOException
+    protected static long estimateRows(Descriptor desc, BufferedRandomAccessFile dfile) throws IOException
     {
         // collect sizes for the first 1000 keys, or first 100 megabytes of data
         final int SAMPLES_CAP = 1000, BYTES_CAP = (int)Math.min(100000000, dfile.length());
@@ -212,136 +211,42 @@ public class SSTableWriter extends SSTable
     }
 
     /**
-     * If either of the index or filter files are missing, rebuilds both.
-     * TODO: Builds most of the in-memory state of the sstable, but doesn't actually open it.
-     */
-    private static void maybeRecover(Descriptor desc) throws IOException
-    {
-        logger.debug("In maybeRecover with Descriptor {}", desc);
-        File ifile = new File(desc.filenameFor(SSTable.COMPONENT_INDEX));
-        File ffile = new File(desc.filenameFor(SSTable.COMPONENT_FILTER));
-        if (ifile.exists() && ffile.exists())
-            // nothing to do
-            return;
-
-        ColumnFamilyStore cfs = Table.open(desc.ksname).getColumnFamilyStore(desc.cfname);
-        Set<byte[]> indexedColumns = cfs.getIndexedColumns();
-        // remove existing files
-        ifile.delete();
-        ffile.delete();
-
-        // open the data file for input, and an IndexWriter for output
-        BufferedRandomAccessFile dfile = new BufferedRandomAccessFile(desc.filenameFor(SSTable.COMPONENT_DATA), "r", 8 * 1024 * 1024);
-        IndexWriter iwriter;
-        long estimatedRows;
-        try
-        {            
-            estimatedRows = estimateRows(desc, dfile);            
-            iwriter = new IndexWriter(desc, StorageService.getPartitioner(), estimatedRows);
-        }
-        catch(IOException e)
-        {
-            dfile.close();
-            throw e;
-        }
-
-        // build the index and filter
-        long rows = 0;
-        try
-        {
-            DecoratedKey key;
-            long dataPosition = 0;
-            while (dataPosition < dfile.length())
-            {
-                key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, FBUtilities.readShortByteArray(dfile));
-                long dataSize = SSTableReader.readRowSize(dfile, desc);
-                if (!indexedColumns.isEmpty())
-                {
-                    // skip bloom filter and column index
-                    dfile.readFully(new byte[dfile.readInt()]);
-                    dfile.readFully(new byte[dfile.readInt()]);
-
-                    // index the column data
-                    ColumnFamily cf = ColumnFamily.create(desc.ksname, desc.cfname);
-                    ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf, dfile);
-                    int columns = dfile.readInt();
-                    for (int i = 0; i < columns; i++)
-                    {
-                        IColumn iColumn = cf.getColumnSerializer().deserialize(dfile);
-                        if (indexedColumns.contains(iColumn.name()))
-                        {
-                            DecoratedKey valueKey = cfs.getIndexKeyFor(iColumn.name(), iColumn.value());
-                            ColumnFamily indexedCf = cfs.newIndexedColumnFamily(iColumn.name());
-                            indexedCf.addColumn(new Column(key.key, ArrayUtils.EMPTY_BYTE_ARRAY, iColumn.clock()));
-                            logger.debug("adding indexed column row mutation for key {}", valueKey);
-                            Table.open(desc.ksname).applyIndexedCF(cfs.getIndexedColumnFamilyStore(iColumn.name()),
-                                                                   key,
-                                                                   valueKey,
-                                                                   indexedCf);
-                        }
-                    }
-                }
-
-                iwriter.afterAppend(key, dataPosition);
-                dataPosition = dfile.getFilePointer() + dataSize;
-                dfile.seek(dataPosition);
-                rows++;
-            }
-
-            for (byte[] column : cfs.getIndexedColumns())
-            {
-                try
-                {
-                    cfs.getIndexedColumnFamilyStore(column).forceBlockingFlush();
-                }
-                catch (ExecutionException e)
-                {
-                    throw new RuntimeException(e);
-                }
-                catch (InterruptedException e)
-                {
-                    throw new AssertionError(e);
-                }
-            }
-        }
-        finally
-        {
-            try
-            {
-                dfile.close();
-                iwriter.close();
-            }
-            catch (IOException e)
-            {
-                logger.error("Failed to close data or index file during recovery of " + desc, e);
-            }
-        }
-
-        logger.debug("estimated row count was %s of real count", ((double)estimatedRows) / rows);
-    }
-
-    /**
      * Removes the given SSTable from temporary status and opens it, rebuilding the non-essential portions of the
      * file if necessary.
      */
-    public static SSTableReader recoverAndOpen(Descriptor desc) throws IOException
+    public static SSTableReader recoverAndOpen(Descriptor desc, IRecoveryProcessor rp) throws IOException
     {
         if (!desc.isLatestVersion)
             // TODO: streaming between different versions will fail: need support for
             // recovering other versions to provide a stable streaming api
             throw new RuntimeException(String.format("Cannot recover SSTable with version %s (current version %s).",
                                                      desc.version, Descriptor.CURRENT_VERSION));
+ 
+        // check that both index and filter files are present
+        logger.debug("In recoverAndOpen with Descriptor {}", desc);
+        File ifile = new File(desc.filenameFor(SSTable.COMPONENT_INDEX));
+        File ffile = new File(desc.filenameFor(SSTable.COMPONENT_FILTER));
+        if (ifile.exists() && ffile.exists()) {
+            // nothing to do
+            return SSTableReader.open(rename(desc, SSTable.componentsFor(desc)));
+        }
+
+        // remove existing files
+        ifile.delete();
+        ffile.delete();
+        
+        // recover sstable
+        rp.recover(desc);
 
         // FIXME: once maybeRecover is recovering BMIs, it should return the recovered
         // components
-        maybeRecover(desc);
-        return SSTableReader.open(rename(desc, SSTable.componentsFor(desc)));
+        return SSTableReader.open(desc.asTemporary(false));
     }
 
     /**
      * Encapsulates writing the index and filter for an SSTable. The state of this object is not valid until it has been closed.
      */
-    static class IndexWriter
+    protected static class IndexWriter
     {
         private final BufferedRandomAccessFile indexFile;
         public final Descriptor desc;

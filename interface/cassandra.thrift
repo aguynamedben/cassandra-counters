@@ -46,7 +46,7 @@ namespace rb CassandraThrift
 #           for every edit that doesn't result in a change to major/minor.
 #
 # See the Semantic Versioning Specification (SemVer) http://semver.org.
-const string VERSION = "15.0.0"
+const string VERSION = "15.1.0"
 
 
 #
@@ -60,7 +60,7 @@ const string VERSION = "15.0.0"
  *                   are made about what the timestamp represents, but using microseconds-since-epoch is customary.
  */
 struct Clock {
-   1: required i64 timestamp,
+   1: optional i64 timestamp,
 }
 
 /** Basic unit of data within a ColumnFamily.
@@ -479,7 +479,17 @@ service Cassandra {
   */
   void truncate(1:required string cfname)
        throws (1: InvalidRequestException ire, 2: UnavailableException ue),
-    
+  
+  /**
+   Experimental api for increment only counters.
+   Mutation_map maps key to column family to a list of Mutation objects to take place at that scope.
+   Value should be of type long.
+   
+   http://wiki.apache.org/cassandra/Counters
+  */
+  void increment(1:required map<binary, map<string, list<Mutation>>> mutation_map)
+       throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
+  
   // Meta-APIs -- APIs to get information about the node or cluster,
   // rather than user data.  The nodeprobe program provides usage examples.
   

@@ -26,6 +26,9 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.sstable.AESRecoveryProcessor;
+import org.apache.cassandra.io.sstable.IRecoveryProcessor;
+import org.apache.cassandra.io.sstable.IndexRecoveryProcessor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableWriter;
 import org.apache.cassandra.net.MessagingService;
@@ -50,7 +53,7 @@ class FileStatusHandler
         assert FileStatus.Action.DELETE == streamStatus.getAction() :
             "Unknown stream action: " + streamStatus.getAction();
 
-        addSSTable(pendingFile);
+        addSSTable(pendingFile, context);
 
         // send a StreamStatus message telling the source node it can delete this file
         if (logger.isDebugEnabled())
@@ -58,13 +61,15 @@ class FileStatusHandler
         MessagingService.instance.sendOneWay(streamStatus.makeStreamStatusMessage(), context.host);
     }
 
-    public static void addSSTable(PendingFile pendingFile)
+    public static void addSSTable(PendingFile pendingFile, StreamContext context)
     {
         // file was successfully streamed
         Descriptor desc = pendingFile.desc;
         try
         {
-            SSTableReader sstable = SSTableWriter.recoverAndOpen(pendingFile.desc);
+            // right now we only need to do this differently for AES operations
+            IRecoveryProcessor rp = pendingFile.type == OperationType.AES ? new AESRecoveryProcessor(context.host) : IndexRecoveryProcessor.instance();
+            SSTableReader sstable = SSTableWriter.recoverAndOpen(pendingFile.desc, rp);
             Table.open(desc.ksname).getColumnFamilyStore(desc.cfname).addSSTable(sstable);
             logger.info("Streaming added " + sstable);
         }

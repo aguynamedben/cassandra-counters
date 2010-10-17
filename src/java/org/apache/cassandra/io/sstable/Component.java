@@ -50,8 +50,10 @@ public class Component
         // statistical metadata about the content of the sstable
         STATS("Statistics.db"),
         // a bitmap secondary index: many of these may exist per sstable
-        BITMAP_INDEX("Bitidx.db");
-
+        BITMAP_INDEX("Bitidx.db"),
+        // a newly streamed file, pre recovery
+        STREAMED("Streamed");
+        
         final String repr;
         Type(String repr)
         {
@@ -73,6 +75,7 @@ public class Component
     public final static Component FILTER = new Component(Type.FILTER, -1);
     public final static Component COMPACTED_MARKER = new Component(Type.COMPACTED_MARKER, -1);
     public final static Component STATS = new Component(Type.STATS, -1);
+    public final static Component STREAMED = new Component(Type.STREAMED, -1);
 
     public final Type type;
     public final int id;
@@ -101,6 +104,7 @@ public class Component
             case PRIMARY_INDEX:
             case FILTER:
             case COMPACTED_MARKER:
+            case STREAMED:
             case STATS:
                 return type.repr;
             case BITMAP_INDEX:
@@ -138,6 +142,7 @@ public class Component
             case FILTER:            component = Component.FILTER;           break;
             case COMPACTED_MARKER:  component = Component.COMPACTED_MARKER; break;
             case STATS:             component = Component.STATS;            break;
+            case STREAMED:          component = Component.STREAMED;         break;
             case BITMAP_INDEX:
                  component = new Component(type, id);
                  break;

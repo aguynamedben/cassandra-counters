@@ -21,10 +21,10 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.List;
 
 import org.apache.log4j.Logger;
-import org.apache.commons.lang.ArrayUtils;
 
 import org.apache.cassandra.io.ICompactSerializer2;
 
@@ -36,7 +36,7 @@ public class TimestampClock implements IClock
 {
     private static Logger logger_ = Logger.getLogger(TimestampClock.class);
     public static TimestampClock MIN_VALUE = new TimestampClock(Long.MIN_VALUE);
-    public static TimestampClock ZERO_VALUE = new TimestampClock(0);
+    public static TimestampClock ZERO_VALUE = new TimestampClock(0L);
     public static ICompactSerializer2<IClock> SERIALIZER = new TimestampClockSerializer();
 
     private final long timestamp;
@@ -101,6 +101,23 @@ public class TimestampClock implements IClock
     public String toString()
     {
         return Long.toString(timestamp);
+    }
+
+    public IColumn diff(IColumn left, IColumn right)
+    {
+        if (ClockRelationship.GREATER_THAN == left.clock().compare(right.clock()))
+        {
+            return left;
+        }
+        return null;
+    }
+
+    public void cleanContext(IColumnContainer cc, InetAddress node)
+    {
+    }
+
+    public void update(ColumnFamily cf, InetAddress node)
+    {
     }
 
     @Override

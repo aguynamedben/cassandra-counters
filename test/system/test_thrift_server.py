@@ -1373,6 +1373,93 @@ class TestMutations(ThriftTester):
             client.describe_ring('system')
         _expect_exception(req, InvalidRequestException)
 
+    def test_incr_standard_insert(self):
+        d1 = 234
+        d2 = 52345
+        _set_keyspace('Keyspace1')
+        cf = 'IncrementCounter1'
+        key = 'key1'
+        values = [struct.pack('>q', d1), struct.pack('>q', d2)]
+        
+        mutations = [Mutation(ColumnOrSuperColumn(Column('c1', v, Clock()))) for v in values]
+        mutation_map = dict({cf: mutations})
+        keyed_mutations = dict({key: mutation_map})
+        
+        client.increment(keyed_mutations)
+        client.increment(keyed_mutations)
+        
+        time.sleep(0.1)
+        
+        rv = client.get(key, ColumnPath(cf, column='c1'), ConsistencyLevel.ONE)
+        assert struct.unpack('>q', rv.column.value)[0] == (d1+d1+d2+d2)
+
+    def test_incr_super_insert(self):
+        d1 = 234
+        d2 = 52345
+        _set_keyspace('Keyspace1')
+        cf = 'SuperIncrementCounter1'
+        key = 'key1'
+        values = [struct.pack('>q', d1), struct.pack('>q', d2)]
+        
+        columns = [Column('c1', v, Clock()) for v in values]
+        
+        mutations = [Mutation(ColumnOrSuperColumn(super_column=SuperColumn('sc1', columns)))]
+        mutation_map = dict({cf: mutations})
+        keyed_mutations = dict({key: mutation_map})
+        
+        client.increment(keyed_mutations)
+        client.increment(keyed_mutations)
+        
+        time.sleep(0.1)
+        
+        rv = client.get(key, ColumnPath(cf, 'sc1', 'c1'), ConsistencyLevel.ONE)
+        assert struct.unpack('>q', rv.column.value)[0] == (d1+d1+d2+d2)
+
+    def test_incr_standard_remove(self):
+        d1 = 234
+        d2 = 52345
+        _set_keyspace('Keyspace1')
+        cf = 'IncrementCounter1'
+        key = 'key1'
+        values = [struct.pack('>q', d1), struct.pack('>q', d2)]
+        
+        mutations = [Mutation(ColumnOrSuperColumn(Column('c1', v, Clock()))) for v in values]
+        mutation_map = dict({cf: mutations})
+        keyed_mutations = dict({key: mutation_map})
+        
+        client.increment(keyed_mutations)
+        client.increment(keyed_mutations)
+        
+        time.sleep(0.1)
+        
+        client.remove('key1', ColumnPath(cf), Clock(), ConsistencyLevel.ONE)
+        time.sleep(0.1)
+        _assert_no_columnpath('key1', ColumnPath('IncrementCounter1', column='c1'))
+
+    def test_incr_super_remove(self):
+        d1 = 234
+        d2 = 52345
+        _set_keyspace('Keyspace1')
+        cf = 'SuperIncrementCounter1'
+        key = 'key1'
+        values = [struct.pack('>q', d1), struct.pack('>q', d2)]
+        
+        columns = [Column('c1', v, Clock()) for v in values]
+        
+        mutations = [Mutation(ColumnOrSuperColumn(super_column=SuperColumn('sc1', columns)))]
+        mutation_map = dict({cf: mutations})
+        keyed_mutations = dict({key: mutation_map})
+        
+        client.increment(keyed_mutations)
+        client.increment(keyed_mutations)
+        
+        time.sleep(0.1)
+        
+        client.remove('key1', ColumnPath('SuperIncrementCounter1', 'sc1'), Clock(), ConsistencyLevel.ONE)
+        time.sleep(0.1)
+        _assert_no_columnpath('key1', ColumnPath('SuperIncrementCounter1', 'sc1', 'c1'))
+  
+
     def test_index_scan(self):
         _set_keyspace('Keyspace1')
         client.insert('key1', ColumnParent('Indexed1'), Column('birthdate', _i64(1), Clock(0)), ConsistencyLevel.ONE)
@@ -1402,7 +1489,6 @@ class TestMutations(ThriftTester):
         assert len(result) == 1, result
         assert result[0].key == 'key3'
         assert len(result[0].columns) == 2, result[0].columns
-        
         
 
 class TestTruncate(ThriftTester):

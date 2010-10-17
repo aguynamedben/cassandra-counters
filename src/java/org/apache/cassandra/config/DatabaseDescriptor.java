@@ -805,7 +805,8 @@ public class DatabaseDescriptor
         assert tableName != null && cfName != null;
         CFMetaData cfMetaData = getCFMetaData(tableName, cfName);
 
-        assert (cfMetaData != null);
+        if (cfMetaData == null)
+            return null;
         return cfMetaData.clockType;
     }
 

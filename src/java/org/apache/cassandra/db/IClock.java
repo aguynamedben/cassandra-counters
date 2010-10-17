@@ -20,6 +20,7 @@ package org.apache.cassandra.db;
 
 import java.io.DataOutput;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.List;
 
 /**
@@ -48,6 +49,26 @@ public interface IClock
      */
     public IClock getSuperset(List<IClock> otherClocks);
 
+    /**
+     * @return compare the two cols and return the left one
+     * if it's greater, otherwise null.
+     */
+    public IColumn diff(IColumn left, IColumn right);
+
+     /**
+      * Clean the context for a specific node.
+      * @param cc Clean the context for the columns in this container.
+      * @param node Node to clean for.
+      */
+    public void cleanContext(IColumnContainer cc, InetAddress node);
+
+    /**
+     * Update context of columns in column family.
+     * @param cf Column family to update.
+     * @param node Update for this node.
+     */
+    public void update(ColumnFamily cf, InetAddress node);
+    
     /**
      * @return number of bytes this type of clock
      * uses up when serialized.

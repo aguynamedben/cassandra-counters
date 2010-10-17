@@ -942,7 +942,7 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
                 {
                     if (logger_.isDebugEnabled())
                         logger_.debug("Requesting from " + entry.getKey() + " ranges " + StringUtils.join(entry.getValue(), ", "));
-                    StreamIn.requestRanges(entry.getKey(), table, entry.getValue());
+                    StreamIn.requestRanges(entry.getKey(), table, entry.getValue(), OperationType.RESTORE_REPLICA_COUNT);
                 }
             }
         }
@@ -1533,7 +1533,7 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
                     public void run()
                     {
                         // TODO each call to transferRanges re-flushes, this is potentially a lot of waste
-                        StreamOut.transferRanges(newEndpoint, table, Arrays.asList(range), callback);
+                        StreamOut.transferRanges(newEndpoint, table, Arrays.asList(range), callback, OperationType.UNBOOTSTRAP);
                     }
                 });
             }

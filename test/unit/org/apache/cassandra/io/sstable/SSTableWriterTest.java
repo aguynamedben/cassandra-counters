@@ -45,6 +45,7 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.io.sstable.IndexRecoveryProcessor;
 import org.apache.cassandra.thrift.IndexClause;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.thrift.IndexOperator;
@@ -83,7 +84,7 @@ public class SSTableWriterTest extends CleanupHelper {
         new File(orig.desc.filenameFor(Component.PRIMARY_INDEX)).delete();
         new File(orig.desc.filenameFor(Component.FILTER)).delete();
         
-        SSTableReader sstr = SSTableWriter.recoverAndOpen(orig.desc);
+        SSTableReader sstr = SSTableWriter.recoverAndOpen(orig.desc, IndexRecoveryProcessor.instance());
         
         ColumnFamilyStore cfs = Table.open("Keyspace1").getColumnFamilyStore("Indexed1");
         cfs.addSSTable(sstr);

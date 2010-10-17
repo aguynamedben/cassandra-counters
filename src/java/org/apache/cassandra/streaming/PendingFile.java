@@ -51,17 +51,19 @@ public class PendingFile
     public final Descriptor desc;
     public final String component;
     public final List<Pair<Long,Long>> sections;
-
+    public final OperationType type;
+   
     public PendingFile(Descriptor desc, PendingFile pf)
     {
-        this(desc, pf.component, pf.sections);
+        this(desc, pf.component, pf.sections, pf.type);
     }
 
-    public PendingFile(Descriptor desc, String component, List<Pair<Long,Long>> sections)
+    public PendingFile(Descriptor desc, String component, List<Pair<Long,Long>> sections, OperationType type)
     {
         this.desc = desc;
         this.component = component;
         this.sections = sections;
+        this.type = type;
     }
 
     public String getFilename()
@@ -99,6 +101,7 @@ public class PendingFile
             {
                 dos.writeLong(section.left); dos.writeLong(section.right);
             }
+            dos.writeUTF(sc.type.name());
         }
 
         public PendingFile deserialize(DataInputStream dis) throws IOException
@@ -109,7 +112,8 @@ public class PendingFile
             List<Pair<Long,Long>> sections = new ArrayList<Pair<Long,Long>>(count);
             for (int i = 0; i < count; i++)
                 sections.add(new Pair<Long,Long>(Long.valueOf(dis.readLong()), Long.valueOf(dis.readLong())));
-            return new PendingFile(desc, component, sections);
+            OperationType type = OperationType.valueOf(dis.readUTF());
+            return new PendingFile(desc, component, sections, type);
         }
     }
 }

@@ -329,6 +329,16 @@ keyspaces:
           compare_with: LongType
           comment: 'A column family with supercolumns, whose column names are Longs (8 bytes)'
 
+        - name: IncrementCounter1
+          column_type: Standard
+          clock_type: IncrementCounter
+          reconciler: IncrementCounterReconciler
+
+        - name: SuperIncrementCounter1
+          column_type: Super
+          clock_type: IncrementCounter
+          reconciler: IncrementCounterReconciler
+
         - name: Indexed1
           default_validation_class: LongType
           column_metadata:
