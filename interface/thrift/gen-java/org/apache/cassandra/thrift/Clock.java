@@ -125,21 +125,13 @@ public class Clock implements TBase<Clock, Clock._Fields>, java.io.Serializable,
   public static final Map<_Fields, FieldMetaData> metaDataMap;
   static {
     Map<_Fields, FieldMetaData> tmpMap = new EnumMap<_Fields, FieldMetaData>(_Fields.class);
-    tmpMap.put(_Fields.TIMESTAMP, new FieldMetaData("timestamp", TFieldRequirementType.REQUIRED, 
+    tmpMap.put(_Fields.TIMESTAMP, new FieldMetaData("timestamp", TFieldRequirementType.OPTIONAL, 
         new FieldValueMetaData(TType.I64)));
     metaDataMap = Collections.unmodifiableMap(tmpMap);
     FieldMetaData.addStructMetaDataMap(Clock.class, metaDataMap);
   }
 
   public Clock() {
-  }
-
-  public Clock(
-    long timestamp)
-  {
-    this();
-    this.timestamp = timestamp;
-    setTimestampIsSet(true);
   }
 
   /**
@@ -239,8 +231,8 @@ public class Clock implements TBase<Clock, Clock._Fields>, java.io.Serializable,
     if (that == null)
       return false;
 
-    boolean this_present_timestamp = true;
-    boolean that_present_timestamp = true;
+    boolean this_present_timestamp = true && this.isSetTimestamp();
+    boolean that_present_timestamp = true && that.isSetTimestamp();
     if (this_present_timestamp || that_present_timestamp) {
       if (!(this_present_timestamp && that_present_timestamp))
         return false;
@@ -302,9 +294,6 @@ public class Clock implements TBase<Clock, Clock._Fields>, java.io.Serializable,
     iprot.readStructEnd();
 
     // check for required fields of primitive type, which can't be checked in the validate method
-    if (!isSetTimestamp()) {
-      throw new TProtocolException("Required field 'timestamp' was not found in serialized data! Struct: " + toString());
-    }
     validate();
   }
 
@@ -312,9 +301,11 @@ public class Clock implements TBase<Clock, Clock._Fields>, java.io.Serializable,
     validate();
 
     oprot.writeStructBegin(STRUCT_DESC);
-    oprot.writeFieldBegin(TIMESTAMP_FIELD_DESC);
-    oprot.writeI64(this.timestamp);
-    oprot.writeFieldEnd();
+    if (isSetTimestamp()) {
+      oprot.writeFieldBegin(TIMESTAMP_FIELD_DESC);
+      oprot.writeI64(this.timestamp);
+      oprot.writeFieldEnd();
+    }
     oprot.writeFieldStop();
     oprot.writeStructEnd();
   }
@@ -324,16 +315,17 @@ public class Clock implements TBase<Clock, Clock._Fields>, java.io.Serializable,
     StringBuilder sb = new StringBuilder("Clock(");
     boolean first = true;
 
-    sb.append("timestamp:");
-    sb.append(this.timestamp);
-    first = false;
+    if (isSetTimestamp()) {
+      sb.append("timestamp:");
+      sb.append(this.timestamp);
+      first = false;
+    }
     sb.append(")");
     return sb.toString();
   }
 
   public void validate() throws TException {
     // check for required fields
-    // alas, we cannot check 'timestamp' because it's a primitive and you chose the non-beans generator.
   }
 
 }

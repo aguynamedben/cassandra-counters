@@ -172,6 +172,17 @@ public class Cassandra {
     public void truncate(String cfname) throws InvalidRequestException, UnavailableException, TException;
 
     /**
+     * Experimental api for increment only counters.
+     * Mutation_map maps key to column family to a list of Mutation objects to take place at that scope.
+     * Value should be of type long.
+     * 
+     * http://wiki.apache.org/cassandra/Counters
+     * 
+     * @param mutation_map
+     */
+    public void increment(Map<byte[],Map<String,List<Mutation>>> mutation_map) throws InvalidRequestException, UnavailableException, TimedOutException, TException;
+
+    /**
      * for each schema version present in the cluster, returns a list of nodes at that version.
      * hosts that do not respond will be under the key DatabaseDescriptor.INITIAL_VERSION.
      * the cluster is all on the same version if the size of the map is 1.
@@ -320,6 +331,8 @@ public class Cassandra {
     public void batch_mutate(Map<byte[],Map<String,List<Mutation>>> mutation_map, ConsistencyLevel consistency_level, AsyncMethodCallback<AsyncClient.batch_mutate_call> resultHandler) throws TException;
 
     public void truncate(String cfname, AsyncMethodCallback<AsyncClient.truncate_call> resultHandler) throws TException;
+
+    public void increment(Map<byte[],Map<String,List<Mutation>>> mutation_map, AsyncMethodCallback<AsyncClient.increment_call> resultHandler) throws TException;
 
     public void describe_schema_versions(AsyncMethodCallback<AsyncClient.describe_schema_versions_call> resultHandler) throws TException;
 
@@ -973,6 +986,48 @@ public class Cassandra {
       }
       if (result.ue != null) {
         throw result.ue;
+      }
+      return;
+    }
+
+    public void increment(Map<byte[],Map<String,List<Mutation>>> mutation_map) throws InvalidRequestException, UnavailableException, TimedOutException, TException
+    {
+      send_increment(mutation_map);
+      recv_increment();
+    }
+
+    public void send_increment(Map<byte[],Map<String,List<Mutation>>> mutation_map) throws TException
+    {
+      oprot_.writeMessageBegin(new TMessage("increment", TMessageType.CALL, ++seqid_));
+      increment_args args = new increment_args();
+      args.setMutation_map(mutation_map);
+      args.write(oprot_);
+      oprot_.writeMessageEnd();
+      oprot_.getTransport().flush();
+    }
+
+    public void recv_increment() throws InvalidRequestException, UnavailableException, TimedOutException, TException
+    {
+      TMessage msg = iprot_.readMessageBegin();
+      if (msg.type == TMessageType.EXCEPTION) {
+        TApplicationException x = TApplicationException.read(iprot_);
+        iprot_.readMessageEnd();
+        throw x;
+      }
+      if (msg.seqid != seqid_) {
+        throw new TApplicationException(TApplicationException.BAD_SEQUENCE_ID, "increment failed: out of sequence response");
+      }
+      increment_result result = new increment_result();
+      result.read(iprot_);
+      iprot_.readMessageEnd();
+      if (result.ire != null) {
+        throw result.ire;
+      }
+      if (result.ue != null) {
+        throw result.ue;
+      }
+      if (result.te != null) {
+        throw result.te;
       }
       return;
     }
@@ -2088,6 +2143,37 @@ public class Cassandra {
       }
     }
 
+    public void increment(Map<byte[],Map<String,List<Mutation>>> mutation_map, AsyncMethodCallback<increment_call> resultHandler) throws TException {
+      checkReady();
+      increment_call method_call = new increment_call(mutation_map, resultHandler, this, protocolFactory, transport);
+      manager.call(method_call);
+    }
+
+    public static class increment_call extends TAsyncMethodCall {
+      private Map<byte[],Map<String,List<Mutation>>> mutation_map;
+      public increment_call(Map<byte[],Map<String,List<Mutation>>> mutation_map, AsyncMethodCallback<increment_call> resultHandler, TAsyncClient client, TProtocolFactory protocolFactory, TNonblockingTransport transport) throws TException {
+        super(client, protocolFactory, transport, resultHandler, false);
+        this.mutation_map = mutation_map;
+      }
+
+      public void write_args(TProtocol prot) throws TException {
+        prot.writeMessageBegin(new TMessage("increment", TMessageType.CALL, 0));
+        increment_args args = new increment_args();
+        args.setMutation_map(mutation_map);
+        args.write(prot);
+        prot.writeMessageEnd();
+      }
+
+      public void getResult() throws InvalidRequestException, UnavailableException, TimedOutException, TException {
+        if (getState() != State.RESPONSE_READ) {
+          throw new IllegalStateException("Method call not finished!");
+        }
+        TMemoryInputTransport memoryTransport = new TMemoryInputTransport(getFrameBuffer().array());
+        TProtocol prot = client.getProtocolFactory().getProtocol(memoryTransport);
+        (new Client(prot)).recv_increment();
+      }
+    }
+
     public void describe_schema_versions(AsyncMethodCallback<describe_schema_versions_call> resultHandler) throws TException {
       checkReady();
       describe_schema_versions_call method_call = new describe_schema_versions_call(resultHandler, this, protocolFactory, transport);
@@ -2604,6 +2690,7 @@ public class Cassandra {
       processMap_.put("remove", new remove());
       processMap_.put("batch_mutate", new batch_mutate());
       processMap_.put("truncate", new truncate());
+      processMap_.put("increment", new increment());
       processMap_.put("describe_schema_versions", new describe_schema_versions());
       processMap_.put("describe_keyspaces", new describe_keyspaces());
       processMap_.put("describe_cluster_name", new describe_cluster_name());
@@ -3181,6 +3268,48 @@ public class Cassandra {
           return;
         }
         oprot.writeMessageBegin(new TMessage("truncate", TMessageType.REPLY, seqid));
+        result.write(oprot);
+        oprot.writeMessageEnd();
+        oprot.getTransport().flush();
+      }
+
+    }
+
+    private class increment implements ProcessFunction {
+      public void process(int seqid, TProtocol iprot, TProtocol oprot) throws TException
+      {
+        increment_args args = new increment_args();
+        try {
+          args.read(iprot);
+        } catch (TProtocolException e) {
+          iprot.readMessageEnd();
+          TApplicationException x = new TApplicationException(TApplicationException.PROTOCOL_ERROR, e.getMessage());
+          oprot.writeMessageBegin(new TMessage("increment", TMessageType.EXCEPTION, seqid));
+          x.write(oprot);
+          oprot.writeMessageEnd();
+          oprot.getTransport().flush();
+          return;
+        }
+        iprot.readMessageEnd();
+        increment_result result = new increment_result();
+        try {
+          iface_.increment(args.mutation_map);
+        } catch (InvalidRequestException ire) {
+          result.ire = ire;
+        } catch (UnavailableException ue) {
+          result.ue = ue;
+        } catch (TimedOutException te) {
+          result.te = te;
+        } catch (Throwable th) {
+          LOGGER.error("Internal error processing increment", th);
+          TApplicationException x = new TApplicationException(TApplicationException.INTERNAL_ERROR, "Internal error processing increment");
+          oprot.writeMessageBegin(new TMessage("increment", TMessageType.EXCEPTION, seqid));
+          x.write(oprot);
+          oprot.writeMessageEnd();
+          oprot.getTransport().flush();
+          return;
+        }
+        oprot.writeMessageBegin(new TMessage("increment", TMessageType.REPLY, seqid));
         result.write(oprot);
         oprot.writeMessageEnd();
         oprot.getTransport().flush();
@@ -16828,6 +16957,852 @@ public class Cassandra {
 
   }
 
+  public static class increment_args implements TBase<increment_args, increment_args._Fields>, java.io.Serializable, Cloneable   {
+    private static final TStruct STRUCT_DESC = new TStruct("increment_args");
+
+    private static final TField MUTATION_MAP_FIELD_DESC = new TField("mutation_map", TType.MAP, (short)1);
+
+    public Map<byte[],Map<String,List<Mutation>>> mutation_map;
+
+    /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
+    public enum _Fields implements TFieldIdEnum {
+      MUTATION_MAP((short)1, "mutation_map");
+
+      private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
+
+      static {
+        for (_Fields field : EnumSet.allOf(_Fields.class)) {
+          byName.put(field.getFieldName(), field);
+        }
+      }
+
+      /**
+       * Find the _Fields constant that matches fieldId, or null if its not found.
+       */
+      public static _Fields findByThriftId(int fieldId) {
+        switch(fieldId) {
+          case 1: // MUTATION_MAP
+            return MUTATION_MAP;
+          default:
+            return null;
+        }
+      }
+
+      /**
+       * Find the _Fields constant that matches fieldId, throwing an exception
+       * if it is not found.
+       */
+      public static _Fields findByThriftIdOrThrow(int fieldId) {
+        _Fields fields = findByThriftId(fieldId);
+        if (fields == null) throw new IllegalArgumentException("Field " + fieldId + " doesn't exist!");
+        return fields;
+      }
+
+      /**
+       * Find the _Fields constant that matches name, or null if its not found.
+       */
+      public static _Fields findByName(String name) {
+        return byName.get(name);
+      }
+
+      private final short _thriftId;
+      private final String _fieldName;
+
+      _Fields(short thriftId, String fieldName) {
+        _thriftId = thriftId;
+        _fieldName = fieldName;
+      }
+
+      public short getThriftFieldId() {
+        return _thriftId;
+      }
+
+      public String getFieldName() {
+        return _fieldName;
+      }
+    }
+
+    // isset id assignments
+
+    public static final Map<_Fields, FieldMetaData> metaDataMap;
+    static {
+      Map<_Fields, FieldMetaData> tmpMap = new EnumMap<_Fields, FieldMetaData>(_Fields.class);
+      tmpMap.put(_Fields.MUTATION_MAP, new FieldMetaData("mutation_map", TFieldRequirementType.REQUIRED, 
+          new MapMetaData(TType.MAP, 
+              new FieldValueMetaData(TType.STRING), 
+              new MapMetaData(TType.MAP, 
+                  new FieldValueMetaData(TType.STRING), 
+                  new ListMetaData(TType.LIST, 
+                      new StructMetaData(TType.STRUCT, Mutation.class))))));
+      metaDataMap = Collections.unmodifiableMap(tmpMap);
+      FieldMetaData.addStructMetaDataMap(increment_args.class, metaDataMap);
+    }
+
+    public increment_args() {
+    }
+
+    public increment_args(
+      Map<byte[],Map<String,List<Mutation>>> mutation_map)
+    {
+      this();
+      this.mutation_map = mutation_map;
+    }
+
+    /**
+     * Performs a deep copy on <i>other</i>.
+     */
+    public increment_args(increment_args other) {
+      if (other.isSetMutation_map()) {
+        Map<byte[],Map<String,List<Mutation>>> __this__mutation_map = new HashMap<byte[],Map<String,List<Mutation>>>();
+        for (Map.Entry<byte[], Map<String,List<Mutation>>> other_element : other.mutation_map.entrySet()) {
+
+          byte[] other_element_key = other_element.getKey();
+          Map<String,List<Mutation>> other_element_value = other_element.getValue();
+
+          byte[] __this__mutation_map_copy_key = new byte[other_element_key.length];
+          System.arraycopy(other_element_key, 0, __this__mutation_map_copy_key, 0, other_element_key.length);
+
+          Map<String,List<Mutation>> __this__mutation_map_copy_value = new HashMap<String,List<Mutation>>();
+          for (Map.Entry<String, List<Mutation>> other_element_value_element : other_element_value.entrySet()) {
+
+            String other_element_value_element_key = other_element_value_element.getKey();
+            List<Mutation> other_element_value_element_value = other_element_value_element.getValue();
+
+            String __this__mutation_map_copy_value_copy_key = other_element_value_element_key;
+
+            List<Mutation> __this__mutation_map_copy_value_copy_value = new ArrayList<Mutation>();
+            for (Mutation other_element_value_element_value_element : other_element_value_element_value) {
+              __this__mutation_map_copy_value_copy_value.add(new Mutation(other_element_value_element_value_element));
+            }
+
+            __this__mutation_map_copy_value.put(__this__mutation_map_copy_value_copy_key, __this__mutation_map_copy_value_copy_value);
+          }
+
+          __this__mutation_map.put(__this__mutation_map_copy_key, __this__mutation_map_copy_value);
+        }
+        this.mutation_map = __this__mutation_map;
+      }
+    }
+
+    public increment_args deepCopy() {
+      return new increment_args(this);
+    }
+
+    @Deprecated
+    public increment_args clone() {
+      return new increment_args(this);
+    }
+
+    public int getMutation_mapSize() {
+      return (this.mutation_map == null) ? 0 : this.mutation_map.size();
+    }
+
+    public void putToMutation_map(byte[] key, Map<String,List<Mutation>> val) {
+      if (this.mutation_map == null) {
+        this.mutation_map = new HashMap<byte[],Map<String,List<Mutation>>>();
+      }
+      this.mutation_map.put(key, val);
+    }
+
+    public Map<byte[],Map<String,List<Mutation>>> getMutation_map() {
+      return this.mutation_map;
+    }
+
+    public increment_args setMutation_map(Map<byte[],Map<String,List<Mutation>>> mutation_map) {
+      this.mutation_map = mutation_map;
+      return this;
+    }
+
+    public void unsetMutation_map() {
+      this.mutation_map = null;
+    }
+
+    /** Returns true if field mutation_map is set (has been asigned a value) and false otherwise */
+    public boolean isSetMutation_map() {
+      return this.mutation_map != null;
+    }
+
+    public void setMutation_mapIsSet(boolean value) {
+      if (!value) {
+        this.mutation_map = null;
+      }
+    }
+
+    public void setFieldValue(_Fields field, Object value) {
+      switch (field) {
+      case MUTATION_MAP:
+        if (value == null) {
+          unsetMutation_map();
+        } else {
+          setMutation_map((Map<byte[],Map<String,List<Mutation>>>)value);
+        }
+        break;
+
+      }
+    }
+
+    public void setFieldValue(int fieldID, Object value) {
+      setFieldValue(_Fields.findByThriftIdOrThrow(fieldID), value);
+    }
+
+    public Object getFieldValue(_Fields field) {
+      switch (field) {
+      case MUTATION_MAP:
+        return getMutation_map();
+
+      }
+      throw new IllegalStateException();
+    }
+
+    public Object getFieldValue(int fieldId) {
+      return getFieldValue(_Fields.findByThriftIdOrThrow(fieldId));
+    }
+
+    /** Returns true if field corresponding to fieldID is set (has been asigned a value) and false otherwise */
+    public boolean isSet(_Fields field) {
+      switch (field) {
+      case MUTATION_MAP:
+        return isSetMutation_map();
+      }
+      throw new IllegalStateException();
+    }
+
+    public boolean isSet(int fieldID) {
+      return isSet(_Fields.findByThriftIdOrThrow(fieldID));
+    }
+
+    @Override
+    public boolean equals(Object that) {
+      if (that == null)
+        return false;
+      if (that instanceof increment_args)
+        return this.equals((increment_args)that);
+      return false;
+    }
+
+    public boolean equals(increment_args that) {
+      if (that == null)
+        return false;
+
+      boolean this_present_mutation_map = true && this.isSetMutation_map();
+      boolean that_present_mutation_map = true && that.isSetMutation_map();
+      if (this_present_mutation_map || that_present_mutation_map) {
+        if (!(this_present_mutation_map && that_present_mutation_map))
+          return false;
+        if (!this.mutation_map.equals(that.mutation_map))
+          return false;
+      }
+
+      return true;
+    }
+
+    @Override
+    public int hashCode() {
+      return 0;
+    }
+
+    public int compareTo(increment_args other) {
+      if (!getClass().equals(other.getClass())) {
+        return getClass().getName().compareTo(other.getClass().getName());
+      }
+
+      int lastComparison = 0;
+      increment_args typedOther = (increment_args)other;
+
+      lastComparison = Boolean.valueOf(isSetMutation_map()).compareTo(typedOther.isSetMutation_map());
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+      if (isSetMutation_map()) {        lastComparison = TBaseHelper.compareTo(this.mutation_map, typedOther.mutation_map);
+        if (lastComparison != 0) {
+          return lastComparison;
+        }
+      }
+      return 0;
+    }
+
+    public void read(TProtocol iprot) throws TException {
+      TField field;
+      iprot.readStructBegin();
+      while (true)
+      {
+        field = iprot.readFieldBegin();
+        if (field.type == TType.STOP) { 
+          break;
+        }
+        switch (field.id) {
+          case 1: // MUTATION_MAP
+            if (field.type == TType.MAP) {
+              {
+                TMap _map86 = iprot.readMapBegin();
+                this.mutation_map = new HashMap<byte[],Map<String,List<Mutation>>>(2*_map86.size);
+                for (int _i87 = 0; _i87 < _map86.size; ++_i87)
+                {
+                  byte[] _key88;
+                  Map<String,List<Mutation>> _val89;
+                  _key88 = iprot.readBinary();
+                  {
+                    TMap _map90 = iprot.readMapBegin();
+                    _val89 = new HashMap<String,List<Mutation>>(2*_map90.size);
+                    for (int _i91 = 0; _i91 < _map90.size; ++_i91)
+                    {
+                      String _key92;
+                      List<Mutation> _val93;
+                      _key92 = iprot.readString();
+                      {
+                        TList _list94 = iprot.readListBegin();
+                        _val93 = new ArrayList<Mutation>(_list94.size);
+                        for (int _i95 = 0; _i95 < _list94.size; ++_i95)
+                        {
+                          Mutation _elem96;
+                          _elem96 = new Mutation();
+                          _elem96.read(iprot);
+                          _val93.add(_elem96);
+                        }
+                        iprot.readListEnd();
+                      }
+                      _val89.put(_key92, _val93);
+                    }
+                    iprot.readMapEnd();
+                  }
+                  this.mutation_map.put(_key88, _val89);
+                }
+                iprot.readMapEnd();
+              }
+            } else { 
+              TProtocolUtil.skip(iprot, field.type);
+            }
+            break;
+          default:
+            TProtocolUtil.skip(iprot, field.type);
+        }
+        iprot.readFieldEnd();
+      }
+      iprot.readStructEnd();
+
+      // check for required fields of primitive type, which can't be checked in the validate method
+      validate();
+    }
+
+    public void write(TProtocol oprot) throws TException {
+      validate();
+
+      oprot.writeStructBegin(STRUCT_DESC);
+      if (this.mutation_map != null) {
+        oprot.writeFieldBegin(MUTATION_MAP_FIELD_DESC);
+        {
+          oprot.writeMapBegin(new TMap(TType.STRING, TType.MAP, this.mutation_map.size()));
+          for (Map.Entry<byte[], Map<String,List<Mutation>>> _iter97 : this.mutation_map.entrySet())
+          {
+            oprot.writeBinary(_iter97.getKey());
+            {
+              oprot.writeMapBegin(new TMap(TType.STRING, TType.LIST, _iter97.getValue().size()));
+              for (Map.Entry<String, List<Mutation>> _iter98 : _iter97.getValue().entrySet())
+              {
+                oprot.writeString(_iter98.getKey());
+                {
+                  oprot.writeListBegin(new TList(TType.STRUCT, _iter98.getValue().size()));
+                  for (Mutation _iter99 : _iter98.getValue())
+                  {
+                    _iter99.write(oprot);
+                  }
+                  oprot.writeListEnd();
+                }
+              }
+              oprot.writeMapEnd();
+            }
+          }
+          oprot.writeMapEnd();
+        }
+        oprot.writeFieldEnd();
+      }
+      oprot.writeFieldStop();
+      oprot.writeStructEnd();
+    }
+
+    @Override
+    public String toString() {
+      StringBuilder sb = new StringBuilder("increment_args(");
+      boolean first = true;
+
+      sb.append("mutation_map:");
+      if (this.mutation_map == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.mutation_map);
+      }
+      first = false;
+      sb.append(")");
+      return sb.toString();
+    }
+
+    public void validate() throws TException {
+      // check for required fields
+      if (mutation_map == null) {
+        throw new TProtocolException("Required field 'mutation_map' was not present! Struct: " + toString());
+      }
+    }
+
+  }
+
+  public static class increment_result implements TBase<increment_result, increment_result._Fields>, java.io.Serializable, Cloneable   {
+    private static final TStruct STRUCT_DESC = new TStruct("increment_result");
+
+    private static final TField IRE_FIELD_DESC = new TField("ire", TType.STRUCT, (short)1);
+    private static final TField UE_FIELD_DESC = new TField("ue", TType.STRUCT, (short)2);
+    private static final TField TE_FIELD_DESC = new TField("te", TType.STRUCT, (short)3);
+
+    public InvalidRequestException ire;
+    public UnavailableException ue;
+    public TimedOutException te;
+
+    /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
+    public enum _Fields implements TFieldIdEnum {
+      IRE((short)1, "ire"),
+      UE((short)2, "ue"),
+      TE((short)3, "te");
+
+      private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
+
+      static {
+        for (_Fields field : EnumSet.allOf(_Fields.class)) {
+          byName.put(field.getFieldName(), field);
+        }
+      }
+
+      /**
+       * Find the _Fields constant that matches fieldId, or null if its not found.
+       */
+      public static _Fields findByThriftId(int fieldId) {
+        switch(fieldId) {
+          case 1: // IRE
+            return IRE;
+          case 2: // UE
+            return UE;
+          case 3: // TE
+            return TE;
+          default:
+            return null;
+        }
+      }
+
+      /**
+       * Find the _Fields constant that matches fieldId, throwing an exception
+       * if it is not found.
+       */
+      public static _Fields findByThriftIdOrThrow(int fieldId) {
+        _Fields fields = findByThriftId(fieldId);
+        if (fields == null) throw new IllegalArgumentException("Field " + fieldId + " doesn't exist!");
+        return fields;
+      }
+
+      /**
+       * Find the _Fields constant that matches name, or null if its not found.
+       */
+      public static _Fields findByName(String name) {
+        return byName.get(name);
+      }
+
+      private final short _thriftId;
+      private final String _fieldName;
+
+      _Fields(short thriftId, String fieldName) {
+        _thriftId = thriftId;
+        _fieldName = fieldName;
+      }
+
+      public short getThriftFieldId() {
+        return _thriftId;
+      }
+
+      public String getFieldName() {
+        return _fieldName;
+      }
+    }
+
+    // isset id assignments
+
+    public static final Map<_Fields, FieldMetaData> metaDataMap;
+    static {
+      Map<_Fields, FieldMetaData> tmpMap = new EnumMap<_Fields, FieldMetaData>(_Fields.class);
+      tmpMap.put(_Fields.IRE, new FieldMetaData("ire", TFieldRequirementType.DEFAULT, 
+          new FieldValueMetaData(TType.STRUCT)));
+      tmpMap.put(_Fields.UE, new FieldMetaData("ue", TFieldRequirementType.DEFAULT, 
+          new FieldValueMetaData(TType.STRUCT)));
+      tmpMap.put(_Fields.TE, new FieldMetaData("te", TFieldRequirementType.DEFAULT, 
+          new FieldValueMetaData(TType.STRUCT)));
+      metaDataMap = Collections.unmodifiableMap(tmpMap);
+      FieldMetaData.addStructMetaDataMap(increment_result.class, metaDataMap);
+    }
+
+    public increment_result() {
+    }
+
+    public increment_result(
+      InvalidRequestException ire,
+      UnavailableException ue,
+      TimedOutException te)
+    {
+      this();
+      this.ire = ire;
+      this.ue = ue;
+      this.te = te;
+    }
+
+    /**
+     * Performs a deep copy on <i>other</i>.
+     */
+    public increment_result(increment_result other) {
+      if (other.isSetIre()) {
+        this.ire = new InvalidRequestException(other.ire);
+      }
+      if (other.isSetUe()) {
+        this.ue = new UnavailableException(other.ue);
+      }
+      if (other.isSetTe()) {
+        this.te = new TimedOutException(other.te);
+      }
+    }
+
+    public increment_result deepCopy() {
+      return new increment_result(this);
+    }
+
+    @Deprecated
+    public increment_result clone() {
+      return new increment_result(this);
+    }
+
+    public InvalidRequestException getIre() {
+      return this.ire;
+    }
+
+    public increment_result setIre(InvalidRequestException ire) {
+      this.ire = ire;
+      return this;
+    }
+
+    public void unsetIre() {
+      this.ire = null;
+    }
+
+    /** Returns true if field ire is set (has been asigned a value) and false otherwise */
+    public boolean isSetIre() {
+      return this.ire != null;
+    }
+
+    public void setIreIsSet(boolean value) {
+      if (!value) {
+        this.ire = null;
+      }
+    }
+
+    public UnavailableException getUe() {
+      return this.ue;
+    }
+
+    public increment_result setUe(UnavailableException ue) {
+      this.ue = ue;
+      return this;
+    }
+
+    public void unsetUe() {
+      this.ue = null;
+    }
+
+    /** Returns true if field ue is set (has been asigned a value) and false otherwise */
+    public boolean isSetUe() {
+      return this.ue != null;
+    }
+
+    public void setUeIsSet(boolean value) {
+      if (!value) {
+        this.ue = null;
+      }
+    }
+
+    public TimedOutException getTe() {
+      return this.te;
+    }
+
+    public increment_result setTe(TimedOutException te) {
+      this.te = te;
+      return this;
+    }
+
+    public void unsetTe() {
+      this.te = null;
+    }
+
+    /** Returns true if field te is set (has been asigned a value) and false otherwise */
+    public boolean isSetTe() {
+      return this.te != null;
+    }
+
+    public void setTeIsSet(boolean value) {
+      if (!value) {
+        this.te = null;
+      }
+    }
+
+    public void setFieldValue(_Fields field, Object value) {
+      switch (field) {
+      case IRE:
+        if (value == null) {
+          unsetIre();
+        } else {
+          setIre((InvalidRequestException)value);
+        }
+        break;
+
+      case UE:
+        if (value == null) {
+          unsetUe();
+        } else {
+          setUe((UnavailableException)value);
+        }
+        break;
+
+      case TE:
+        if (value == null) {
+          unsetTe();
+        } else {
+          setTe((TimedOutException)value);
+        }
+        break;
+
+      }
+    }
+
+    public void setFieldValue(int fieldID, Object value) {
+      setFieldValue(_Fields.findByThriftIdOrThrow(fieldID), value);
+    }
+
+    public Object getFieldValue(_Fields field) {
+      switch (field) {
+      case IRE:
+        return getIre();
+
+      case UE:
+        return getUe();
+
+      case TE:
+        return getTe();
+
+      }
+      throw new IllegalStateException();
+    }
+
+    public Object getFieldValue(int fieldId) {
+      return getFieldValue(_Fields.findByThriftIdOrThrow(fieldId));
+    }
+
+    /** Returns true if field corresponding to fieldID is set (has been asigned a value) and false otherwise */
+    public boolean isSet(_Fields field) {
+      switch (field) {
+      case IRE:
+        return isSetIre();
+      case UE:
+        return isSetUe();
+      case TE:
+        return isSetTe();
+      }
+      throw new IllegalStateException();
+    }
+
+    public boolean isSet(int fieldID) {
+      return isSet(_Fields.findByThriftIdOrThrow(fieldID));
+    }
+
+    @Override
+    public boolean equals(Object that) {
+      if (that == null)
+        return false;
+      if (that instanceof increment_result)
+        return this.equals((increment_result)that);
+      return false;
+    }
+
+    public boolean equals(increment_result that) {
+      if (that == null)
+        return false;
+
+      boolean this_present_ire = true && this.isSetIre();
+      boolean that_present_ire = true && that.isSetIre();
+      if (this_present_ire || that_present_ire) {
+        if (!(this_present_ire && that_present_ire))
+          return false;
+        if (!this.ire.equals(that.ire))
+          return false;
+      }
+
+      boolean this_present_ue = true && this.isSetUe();
+      boolean that_present_ue = true && that.isSetUe();
+      if (this_present_ue || that_present_ue) {
+        if (!(this_present_ue && that_present_ue))
+          return false;
+        if (!this.ue.equals(that.ue))
+          return false;
+      }
+
+      boolean this_present_te = true && this.isSetTe();
+      boolean that_present_te = true && that.isSetTe();
+      if (this_present_te || that_present_te) {
+        if (!(this_present_te && that_present_te))
+          return false;
+        if (!this.te.equals(that.te))
+          return false;
+      }
+
+      return true;
+    }
+
+    @Override
+    public int hashCode() {
+      return 0;
+    }
+
+    public int compareTo(increment_result other) {
+      if (!getClass().equals(other.getClass())) {
+        return getClass().getName().compareTo(other.getClass().getName());
+      }
+
+      int lastComparison = 0;
+      increment_result typedOther = (increment_result)other;
+
+      lastComparison = Boolean.valueOf(isSetIre()).compareTo(typedOther.isSetIre());
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+      if (isSetIre()) {        lastComparison = TBaseHelper.compareTo(this.ire, typedOther.ire);
+        if (lastComparison != 0) {
+          return lastComparison;
+        }
+      }
+      lastComparison = Boolean.valueOf(isSetUe()).compareTo(typedOther.isSetUe());
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+      if (isSetUe()) {        lastComparison = TBaseHelper.compareTo(this.ue, typedOther.ue);
+        if (lastComparison != 0) {
+          return lastComparison;
+        }
+      }
+      lastComparison = Boolean.valueOf(isSetTe()).compareTo(typedOther.isSetTe());
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+      if (isSetTe()) {        lastComparison = TBaseHelper.compareTo(this.te, typedOther.te);
+        if (lastComparison != 0) {
+          return lastComparison;
+        }
+      }
+      return 0;
+    }
+
+    public void read(TProtocol iprot) throws TException {
+      TField field;
+      iprot.readStructBegin();
+      while (true)
+      {
+        field = iprot.readFieldBegin();
+        if (field.type == TType.STOP) { 
+          break;
+        }
+        switch (field.id) {
+          case 1: // IRE
+            if (field.type == TType.STRUCT) {
+              this.ire = new InvalidRequestException();
+              this.ire.read(iprot);
+            } else { 
+              TProtocolUtil.skip(iprot, field.type);
+            }
+            break;
+          case 2: // UE
+            if (field.type == TType.STRUCT) {
+              this.ue = new UnavailableException();
+              this.ue.read(iprot);
+            } else { 
+              TProtocolUtil.skip(iprot, field.type);
+            }
+            break;
+          case 3: // TE
+            if (field.type == TType.STRUCT) {
+              this.te = new TimedOutException();
+              this.te.read(iprot);
+            } else { 
+              TProtocolUtil.skip(iprot, field.type);
+            }
+            break;
+          default:
+            TProtocolUtil.skip(iprot, field.type);
+        }
+        iprot.readFieldEnd();
+      }
+      iprot.readStructEnd();
+
+      // check for required fields of primitive type, which can't be checked in the validate method
+      validate();
+    }
+
+    public void write(TProtocol oprot) throws TException {
+      oprot.writeStructBegin(STRUCT_DESC);
+
+      if (this.isSetIre()) {
+        oprot.writeFieldBegin(IRE_FIELD_DESC);
+        this.ire.write(oprot);
+        oprot.writeFieldEnd();
+      } else if (this.isSetUe()) {
+        oprot.writeFieldBegin(UE_FIELD_DESC);
+        this.ue.write(oprot);
+        oprot.writeFieldEnd();
+      } else if (this.isSetTe()) {
+        oprot.writeFieldBegin(TE_FIELD_DESC);
+        this.te.write(oprot);
+        oprot.writeFieldEnd();
+      }
+      oprot.writeFieldStop();
+      oprot.writeStructEnd();
+    }
+
+    @Override
+    public String toString() {
+      StringBuilder sb = new StringBuilder("increment_result(");
+      boolean first = true;
+
+      sb.append("ire:");
+      if (this.ire == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.ire);
+      }
+      first = false;
+      if (!first) sb.append(", ");
+      sb.append("ue:");
+      if (this.ue == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.ue);
+      }
+      first = false;
+      if (!first) sb.append(", ");
+      sb.append("te:");
+      if (this.te == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.te);
+      }
+      first = false;
+      sb.append(")");
+      return sb.toString();
+    }
+
+    public void validate() throws TException {
+      // check for required fields
+    }
+
+  }
+
   public static class describe_schema_versions_args implements TBase<describe_schema_versions_args, describe_schema_versions_args._Fields>, java.io.Serializable, Cloneable   {
     private static final TStruct STRUCT_DESC = new TStruct("describe_schema_versions_args");
 
@@ -17349,25 +18324,25 @@ public class Cassandra {
           case 0: // SUCCESS
             if (field.type == TType.MAP) {
               {
-                TMap _map86 = iprot.readMapBegin();
-                this.success = new HashMap<String,List<String>>(2*_map86.size);
-                for (int _i87 = 0; _i87 < _map86.size; ++_i87)
+                TMap _map100 = iprot.readMapBegin();
+                this.success = new HashMap<String,List<String>>(2*_map100.size);
+                for (int _i101 = 0; _i101 < _map100.size; ++_i101)
                 {
-                  String _key88;
-                  List<String> _val89;
-                  _key88 = iprot.readString();
+                  String _key102;
+                  List<String> _val103;
+                  _key102 = iprot.readString();
                   {
-                    TList _list90 = iprot.readListBegin();
-                    _val89 = new ArrayList<String>(_list90.size);
-                    for (int _i91 = 0; _i91 < _list90.size; ++_i91)
+                    TList _list104 = iprot.readListBegin();
+                    _val103 = new ArrayList<String>(_list104.size);
+                    for (int _i105 = 0; _i105 < _list104.size; ++_i105)
                     {
-                      String _elem92;
-                      _elem92 = iprot.readString();
-                      _val89.add(_elem92);
+                      String _elem106;
+                      _elem106 = iprot.readString();
+                      _val103.add(_elem106);
                     }
                     iprot.readListEnd();
                   }
-                  this.success.put(_key88, _val89);
+                  this.success.put(_key102, _val103);
                 }
                 iprot.readMapEnd();
               }
@@ -17401,14 +18376,14 @@ public class Cassandra {
         oprot.writeFieldBegin(SUCCESS_FIELD_DESC);
         {
           oprot.writeMapBegin(new TMap(TType.STRING, TType.LIST, this.success.size()));
-          for (Map.Entry<String, List<String>> _iter93 : this.success.entrySet())
+          for (Map.Entry<String, List<String>> _iter107 : this.success.entrySet())
           {
-            oprot.writeString(_iter93.getKey());
+            oprot.writeString(_iter107.getKey());
             {
-              oprot.writeListBegin(new TList(TType.STRING, _iter93.getValue().size()));
-              for (String _iter94 : _iter93.getValue())
+              oprot.writeListBegin(new TList(TType.STRING, _iter107.getValue().size()));
+              for (String _iter108 : _iter107.getValue())
               {
-                oprot.writeString(_iter94);
+                oprot.writeString(_iter108);
               }
               oprot.writeListEnd();
             }
@@ -17900,14 +18875,14 @@ public class Cassandra {
           case 0: // SUCCESS
             if (field.type == TType.LIST) {
               {
-                TList _list95 = iprot.readListBegin();
-                this.success = new ArrayList<KsDef>(_list95.size);
-                for (int _i96 = 0; _i96 < _list95.size; ++_i96)
+                TList _list109 = iprot.readListBegin();
+                this.success = new ArrayList<KsDef>(_list109.size);
+                for (int _i110 = 0; _i110 < _list109.size; ++_i110)
                 {
-                  KsDef _elem97;
-                  _elem97 = new KsDef();
-                  _elem97.read(iprot);
-                  this.success.add(_elem97);
+                  KsDef _elem111;
+                  _elem111 = new KsDef();
+                  _elem111.read(iprot);
+                  this.success.add(_elem111);
                 }
                 iprot.readListEnd();
               }
@@ -17933,9 +18908,9 @@ public class Cassandra {
         oprot.writeFieldBegin(SUCCESS_FIELD_DESC);
         {
           oprot.writeListBegin(new TList(TType.STRUCT, this.success.size()));
-          for (KsDef _iter98 : this.success)
+          for (KsDef _iter112 : this.success)
           {
-            _iter98.write(oprot);
+            _iter112.write(oprot);
           }
           oprot.writeListEnd();
         }
@@ -19523,14 +20498,14 @@ public class Cassandra {
           case 0: // SUCCESS
             if (field.type == TType.LIST) {
               {
-                TList _list99 = iprot.readListBegin();
-                this.success = new ArrayList<TokenRange>(_list99.size);
-                for (int _i100 = 0; _i100 < _list99.size; ++_i100)
+                TList _list113 = iprot.readListBegin();
+                this.success = new ArrayList<TokenRange>(_list113.size);
+                for (int _i114 = 0; _i114 < _list113.size; ++_i114)
                 {
-                  TokenRange _elem101;
-                  _elem101 = new TokenRange();
-                  _elem101.read(iprot);
-                  this.success.add(_elem101);
+                  TokenRange _elem115;
+                  _elem115 = new TokenRange();
+                  _elem115.read(iprot);
+                  this.success.add(_elem115);
                 }
                 iprot.readListEnd();
               }
@@ -19564,9 +20539,9 @@ public class Cassandra {
         oprot.writeFieldBegin(SUCCESS_FIELD_DESC);
         {
           oprot.writeListBegin(new TList(TType.STRUCT, this.success.size()));
-          for (TokenRange _iter102 : this.success)
+          for (TokenRange _iter116 : this.success)
           {
-            _iter102.write(oprot);
+            _iter116.write(oprot);
           }
           oprot.writeListEnd();
         }
@@ -21551,13 +22526,13 @@ public class Cassandra {
           case 0: // SUCCESS
             if (field.type == TType.LIST) {
               {
-                TList _list103 = iprot.readListBegin();
-                this.success = new ArrayList<String>(_list103.size);
-                for (int _i104 = 0; _i104 < _list103.size; ++_i104)
+                TList _list117 = iprot.readListBegin();
+                this.success = new ArrayList<String>(_list117.size);
+                for (int _i118 = 0; _i118 < _list117.size; ++_i118)
                 {
-                  String _elem105;
-                  _elem105 = iprot.readString();
-                  this.success.add(_elem105);
+                  String _elem119;
+                  _elem119 = iprot.readString();
+                  this.success.add(_elem119);
                 }
                 iprot.readListEnd();
               }
@@ -21583,9 +22558,9 @@ public class Cassandra {
         oprot.writeFieldBegin(SUCCESS_FIELD_DESC);
         {
           oprot.writeListBegin(new TList(TType.STRING, this.success.size()));
-          for (String _iter106 : this.success)
+          for (String _iter120 : this.success)
           {
-            oprot.writeString(_iter106);
+            oprot.writeString(_iter120);
           }
           oprot.writeListEnd();
         }
